@@ -101,7 +101,7 @@ export function fieldAt(
     const dx = x - c.x;
     const dy = y - c.y;
     const r2 = dx * dx + dy * dy + a2;
-    const inv = (kCoulomb * c.q) / (r2 * Math.sqrt(r2));
+    const inv = kCoulomb * c.q / (r2 * Math.sqrt(r2));
     ex += dx * inv;
     ey += dy * inv;
   }
@@ -130,17 +130,30 @@ export type PhiGrid = {
   ymax: number;
 };
 
+export type WorldBounds = { xmin: number; xmax: number; ymin: number; ymax: number };
+
+/** World rectangle shown on a cw × ch canvas (same mapping as worldToPixel), plus a margin. */
+export function visibleWorldBounds(cw: number, ch: number, margin = 0.05): WorldBounds {
+  const scale = 2.35 / Math.min(cw, ch);
+  const hx = (cw / 2) * scale + margin;
+  const hy = (ch / 2) * scale + margin;
+  return { xmin: -hx, xmax: hx, ymin: -hy, ymax: hy };
+}
+
 export function samplePotentialGrid(
   charges: PointCharge[],
   params: EMFieldsSimParams,
   nx: number,
   ny: number,
-  margin = 0.08
+  margin = 0.08,
+  bounds?: WorldBounds
 ): PhiGrid {
-  const xmin = -1.12 - margin;
-  const xmax = 1.12 + margin;
-  const ymin = -1.12 - margin;
-  const ymax = 1.12 + margin;
+  const { xmin, xmax, ymin, ymax } = bounds ?? {
+    xmin: -1.12 - margin,
+    xmax: 1.12 + margin,
+    ymin: -1.12 - margin,
+    ymax: 1.12 + margin
+  };
   const values = new Float32Array(nx * ny);
   let i = 0;
   for (let j = 0; j < ny; j++) {
@@ -237,11 +250,11 @@ export function traceFieldLine(
 export function computeFieldLines(
   charges: PointCharge[],
   params: EMFieldsSimParams,
-  seedsPerPositive = 14
+  seedsPerPositive = 14,
+  worldLimit = 1.35
 ): Vec2World[][] {
   const lines: Vec2World[][] = [];
   const hitChargeR = 0.055;
-  const worldLimit = 1.35;
 
   for (const c of charges) {
     if (c.q <= 0) {

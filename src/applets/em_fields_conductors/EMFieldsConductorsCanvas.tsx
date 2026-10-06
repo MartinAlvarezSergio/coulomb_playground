@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { logicalPointer, setLogicalTransform } from "../../core/canvasScale";
 import { AppletHostAdapter } from "../../core/host";
-import { ControlCard } from "../../ui/ControlCard";
+import { AppletStage } from "../../ui/stage/AppletStage";
+import {
+  StageIconButton,
+  StagePillButton,
+  StagePills,
+  StageSegmented,
+  StageToggle
+} from "../../ui/stage/StageControls";
 import { renderEMFieldsScene } from "./render";
 import {
   clampChargeToBoundary,
@@ -13,7 +21,8 @@ import {
   pixelToWorld,
   presetCharges,
   phiRangeForRender,
-  samplePotentialGrid
+  samplePotentialGrid,
+  visibleWorldBounds
 } from "./sim";
 import type { BoundaryMode, EMFieldsPresetId, PointCharge } from "./types";
 
@@ -21,19 +30,25 @@ type Props = {
   host?: AppletHostAdapter;
 };
 
+/** Logical canvas size: the world-to-pixel mapping and hit tests use these units. */
+const CANVAS_W = 880;
+const CANVAS_H = 600;
+/** Sample the potential and trace field lines over the whole visible stage. */
+const VIEW = visibleWorldBounds(CANVAS_W, CANVAS_H);
+const FIELD_LINE_LIMIT = Math.max(VIEW.xmax, VIEW.ymax);
+
 const TIP = {
-  sign: "Choose the sign of the next inserted charge.",
+  sign: "Sign of the next charge you place.",
   boundary:
     "Free space has no conductor.\nGrounded plane enforces zero potential on the surface (method of images).",
-  equip: "Color bands of equal electric potential (symmetric scale around zero).",
+  equip: "Colour bands of equal electric potential (symmetric scale around zero).",
   field: "Lines tangent to the electric field direction.",
-  test: "Shows a small probe charge and the local force direction (qE).",
-  delete: "Remove the selected charge.\nClick a charge to select it.",
+  test: "A small probe charge and the local force direction (qE). Drag it around.",
+  delete: "Remove the selected charge. Click a charge to select it.",
   reset: "Clear the canvas and restore a simple default pair of charges.",
-  canvas: "Click empty space to place a charge.\nDrag charges to move them.\nWith test charge on, drag the probe.",
   presetDipole: "Equal and opposite charges side by side.",
-  presetPlane: "Single positive charge above the grounded plane (switch boundary to grounded plane to compare).",
-  presetTwoLike: "Two positive charges — field lines repel between them.",
+  presetPlane: "Single positive charge above the grounded plane (switch the boundary to grounded plane to compare).",
+  presetTwoLike: "Two positive charges: field lines repel between them.",
   presetQuad: "Four charges in a quadrupole-style arrangement."
 } as const;
 
@@ -54,7 +69,6 @@ function defaultCharges(): PointCharge[] {
 export function EMFieldsConductorsCanvas({ host }: Props): JSX.Element {
   void host;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const layoutRef = useRef<HTMLDivElement | null>(null);
 
   const [charges, setCharges] = useState<PointCharge[]>(defaultCharges);
   const [boundary, setBoundary] = useState<BoundaryMode>("free");
@@ -96,9 +110,9 @@ export function EMFieldsConductorsCanvas({ host }: Props): JSX.Element {
   );
 
   const { phiGrid, phiLo, phiHi, fieldLines } = useMemo(() => {
-    const grid = samplePotentialGrid(clampedCharges, simParams, 128, 96);
+    const grid = samplePotentialGrid(clampedCharges, simParams, 176, 120, 0, VIEW);
     const { lo, hi } = phiRangeForRender(grid);
-    const lines = showField ? computeFieldLines(clampedCharges, simParams) : [];
+    const lines = showField ? computeFieldLines(clampedCharges, simParams, 14, FIELD_LINE_LIMIT) : [];
     return { phiGrid: grid, phiLo: lo, phiHi: hi, fieldLines: lines };
   }, [clampedCharges, simParams, showField]);
 
@@ -112,15 +126,11 @@ export function EMFieldsConductorsCanvas({ host }: Props): JSX.Element {
 
   const redraw = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!canvas) {
-      return;
-    }
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas?.getContext("2d");
     if (!ctx) {
       return;
     }
-    const cw = canvas.width;
-    const ch = canvas.height;
+    setLogicalTransform(ctx, CANVAS_W);
     renderEMFieldsScene(
       ctx,
       showEquip ? phiGrid : null,
@@ -138,8 +148,8 @@ export function EMFieldsConductorsCanvas({ host }: Props): JSX.Element {
         boundary,
         yPlane: DEFAULT_Y_PLANE,
         selectedId,
-        cw,
-        ch
+        cw: CANVAS_W,
+        ch: CANVAS_H
       }
     );
   }, [
@@ -168,67 +178,12 @@ export function EMFieldsConductorsCanvas({ host }: Props): JSX.Element {
   }, [redraw]);
 
   useEffect(() => {
-    const root = layoutRef.current;
-    if (!root) {
-      return;
-    }
-    const tooltip = document.createElement("div");
-    tooltip.className = "hover-help-tooltip";
-    document.body.appendChild(tooltip);
-
-    const placeTooltip = (x: number, y: number): void => {
-      const offset = 14;
-      const maxX = window.innerWidth - tooltip.offsetWidth - 8;
-      const maxY = window.innerHeight - tooltip.offsetHeight - 8;
-      const left = Math.min(Math.max(8, x + offset), Math.max(8, maxX));
-      const top = Math.min(Math.max(8, y + offset), Math.max(8, maxY));
-      tooltip.style.left = `${left}px`;
-      tooltip.style.top = `${top}px`;
-    };
-
-    const onMouseMove = (event: Event): void => {
-      const mouseEvent = event as MouseEvent;
-      const target = mouseEvent.target as HTMLElement | null;
-      const hintTarget = target?.closest?.("[data-hover-help]") as HTMLElement | null;
-      if (!hintTarget || !root.contains(hintTarget)) {
-        tooltip.classList.remove("visible");
-        return;
-      }
-      const hint = hintTarget.getAttribute("data-hover-help");
-      if (!hint) {
-        tooltip.classList.remove("visible");
-        return;
-      }
-      tooltip.textContent = hint;
-      tooltip.classList.add("visible");
-      placeTooltip(mouseEvent.clientX, mouseEvent.clientY);
-    };
-
-    const onMouseLeave = (): void => {
-      tooltip.classList.remove("visible");
-    };
-
-    root.addEventListener("mousemove", onMouseMove);
-    root.addEventListener("mouseleave", onMouseLeave);
-    return () => {
-      root.removeEventListener("mousemove", onMouseMove);
-      root.removeEventListener("mouseleave", onMouseLeave);
-      tooltip.remove();
-    };
-  }, []);
-
-  const canvasPoint = useCallback((event: PointerEvent, canvas: HTMLCanvasElement) => {
-    const rect = canvas.getBoundingClientRect();
-    const x = ((event.clientX - rect.left) / rect.width) * canvas.width;
-    const y = ((event.clientY - rect.top) / rect.height) * canvas.height;
-    return { x, y };
-  }, []);
-
-  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) {
       return;
     }
+    const toLogical = (e: PointerEvent, c: HTMLCanvasElement): { x: number; y: number } =>
+      logicalPointer(e, c, CANVAS_W, CANVAS_H);
 
     function onPointerDown(e: PointerEvent): void {
       const c = canvasRef.current;
@@ -236,12 +191,10 @@ export function EMFieldsConductorsCanvas({ host }: Props): JSX.Element {
         return;
       }
       const ir = interactionRef.current;
-      const px = canvasPoint(e, c);
-      const cw = c.width;
-      const ch = c.height;
-      const w = pixelToWorld(px.x, px.y, cw, ch);
+      const px = toLogical(e, c);
+      const w = pixelToWorld(px.x, px.y, CANVAS_W, CANVAS_H);
 
-      if (ir.showTest && hitTestNearTestCharge(w.x, w.y, ir.testPos.x, ir.testPos.y, cw, ch)) {
+      if (ir.showTest && hitTestNearTestCharge(w.x, w.y, ir.testPos.x, ir.testPos.y, CANVAS_W, CANVAS_H)) {
         dragRef.current = { kind: "test", startPx: px };
         setSelectedId(null);
         c.setPointerCapture(e.pointerId);
@@ -249,7 +202,7 @@ export function EMFieldsConductorsCanvas({ host }: Props): JSX.Element {
       }
 
       const list = ir.charges.map((q) => clampChargeToBoundary(q, ir.boundary, DEFAULT_Y_PLANE));
-      const hit = hitTestCharge(w.x, w.y, list, cw, ch);
+      const hit = hitTestCharge(w.x, w.y, list, CANVAS_W, CANVAS_H);
       if (hit) {
         dragRef.current = { kind: "charge", id: hit.id, startPx: px };
         setSelectedId(hit.id);
@@ -269,17 +222,13 @@ export function EMFieldsConductorsCanvas({ host }: Props): JSX.Element {
         return;
       }
       const ir = interactionRef.current;
-      const px = canvasPoint(e, c);
-      const cw = c.width;
-      const ch = c.height;
-      const w = pixelToWorld(px.x, px.y, cw, ch);
+      const px = toLogical(e, c);
+      const w = pixelToWorld(px.x, px.y, CANVAS_W, CANVAS_H);
 
       if (d.kind === "charge") {
         setCharges((prev) =>
           prev.map((q) =>
-            q.id === d.id
-              ? clampChargeToBoundary({ ...q, x: w.x, y: w.y }, ir.boundary, DEFAULT_Y_PLANE)
-              : q
+            q.id === d.id ? clampChargeToBoundary({ ...q, x: w.x, y: w.y }, ir.boundary, DEFAULT_Y_PLANE) : q
           )
         );
       } else if (d.kind === "test") {
@@ -303,18 +252,14 @@ export function EMFieldsConductorsCanvas({ host }: Props): JSX.Element {
         return;
       }
       const ir = interactionRef.current;
-      const px = canvasPoint(e, c);
-      const dx = px.x - d.startPx.x;
-      const dy = px.y - d.startPx.y;
-      if (Math.hypot(dx, dy) > 7) {
+      const px = toLogical(e, c);
+      // Logical pixels: a short drag on empty space still counts as a tap.
+      if (Math.hypot(px.x - d.startPx.x, px.y - d.startPx.y) > 7) {
         return;
       }
-      const cw = c.width;
-      const ch = c.height;
-      const w = pixelToWorld(px.x, px.y, cw, ch);
+      const w = pixelToWorld(px.x, px.y, CANVAS_W, CANVAS_H);
       const list = ir.charges.map((q) => clampChargeToBoundary(q, ir.boundary, DEFAULT_Y_PLANE));
-      const hit = hitTestCharge(w.x, w.y, list, cw, ch);
-      if (hit) {
+      if (hitTestCharge(w.x, w.y, list, CANVAS_W, CANVAS_H)) {
         return;
       }
       const nc: PointCharge = clampChargeToBoundary(
@@ -336,12 +281,10 @@ export function EMFieldsConductorsCanvas({ host }: Props): JSX.Element {
       canvas.removeEventListener("pointerup", endPointer);
       canvas.removeEventListener("pointercancel", endPointer);
     };
-  }, [canvasPoint]);
+  }, []);
 
   function applyPreset(id: EMFieldsPresetId): void {
-    const list = presetCharges(id, DEFAULT_Y_PLANE).map((c) =>
-      clampChargeToBoundary(c, boundary, DEFAULT_Y_PLANE)
-    );
+    const list = presetCharges(id, DEFAULT_Y_PLANE).map((c) => clampChargeToBoundary(c, boundary, DEFAULT_Y_PLANE));
     setCharges(list);
     setSelectedId(list[0]?.id ?? null);
   }
@@ -360,118 +303,84 @@ export function EMFieldsConductorsCanvas({ host }: Props): JSX.Element {
     setSelectedId(null);
   }
 
-  const subtitle = (
+  const toolbar = (
     <>
-      <p style={{ margin: "0 0 0.35rem" }}>2D slice, 1/r potential (softened near singularities)</p>
-      <ul style={{ margin: 0, paddingLeft: "1.1rem", lineHeight: 1.5 }}>
-        <li>Click empty space to add a charge</li>
-        <li>Drag charges; grounded plane uses image charges</li>
-        <li>Hover controls for short explanations</li>
+      <StageIconButton icon="reset" label="Reset" tip={TIP.reset} onClick={onReset} />
+      <StageIconButton icon="trash" label="Delete selected" tip={TIP.delete} disabled={!selectedId} onClick={onDeleteSelected} />
+    </>
+  );
+
+  const controls = (
+    <>
+      <StageSegmented
+        ariaLabel="Charge sign"
+        label="Charge sign"
+        tip={TIP.sign}
+        value={nextSign}
+        options={[
+          { value: 1, label: "+ Positive" },
+          { value: -1, label: "− Negative" }
+        ]}
+        onChange={setNextSign}
+      />
+      <StageSegmented
+        ariaLabel="Boundary model"
+        label="Boundary model"
+        tip={TIP.boundary}
+        value={boundary}
+        options={[
+          { value: "free", label: "Free space" },
+          { value: "grounded_plane", label: "Grounded plane" }
+        ]}
+        onChange={setBoundary}
+      />
+      <StagePills>
+        <StageToggle label="Field lines" on={showField} tip={TIP.field} onChange={setShowField} />
+        <StageToggle label="Equipotentials" on={showEquip} tip={TIP.equip} onChange={setShowEquip} />
+        <StageToggle label="Test charge" on={showTest} tip={TIP.test} onChange={setShowTest} />
+      </StagePills>
+      <div className="stage-pills stage-presets">
+        {PRESETS.map((p) => (
+          <StagePillButton key={p.id} label={p.label} tip={p.tip} onClick={() => applyPreset(p.id)} />
+        ))}
+      </div>
+    </>
+  );
+
+  const info = (
+    <>
+      <h4>Using it</h4>
+      <ul>
+        <li>Click empty space to place a charge of the chosen sign; drag charges to move them.</li>
+        <li>With the test charge on, drag the probe to see the force on it.</li>
+      </ul>
+      <h4>Physics hints</h4>
+      <ul>
+        <li>Field lines start on positive charges and end on negative charges or at infinity.</li>
+        <li>Equipotentials meet field lines at right angles.</li>
+        <li>Conductor surfaces are equipotentials; grounded means fixed at zero potential.</li>
+      </ul>
+      <h4>Model</h4>
+      <ul>
+        <li>2D slice with a 1/r potential, softened near each charge to avoid singularities.</li>
+        <li>
+          Grounded plane: the metal fills the half-space below the line and real charges stay above it. The solver adds an
+          opposite image charge below the surface for each real charge.
+        </li>
       </ul>
     </>
   );
 
   return (
-    <div ref={layoutRef} className="gravity-layout">
-      <div className="panel-stack" style={{ display: "grid", gap: "0.85rem", alignContent: "start" }}>
-        <ControlCard title="Fields and conductors: geometry shapes physics" subtitle={subtitle}>
-          <div className="control-grid">
-            <label className="control-span-2" title={TIP.sign} data-hover-help={TIP.sign}>
-              <span className="slider-label">
-                <span>Charge sign</span>
-                <strong>{nextSign > 0 ? "+" : "−"}</strong>
-              </span>
-              <select
-                value={nextSign}
-                onChange={(e) => setNextSign(Number(e.target.value) as 1 | -1)}
-                aria-label="Sign for next charge"
-              >
-                <option value={1}>Positive</option>
-                <option value={-1}>Negative</option>
-              </select>
-            </label>
-
-            <label className="checkbox control-span-2" title={TIP.field} data-hover-help={TIP.field}>
-              <input type="checkbox" checked={showField} onChange={(e) => setShowField(e.target.checked)} />
-              Show field lines
-            </label>
-            <label className="checkbox control-span-2" title={TIP.equip} data-hover-help={TIP.equip}>
-              <input type="checkbox" checked={showEquip} onChange={(e) => setShowEquip(e.target.checked)} />
-              Show equipotentials
-            </label>
-            <label className="checkbox control-span-2" title={TIP.test} data-hover-help={TIP.test}>
-              <input type="checkbox" checked={showTest} onChange={(e) => setShowTest(e.target.checked)} />
-              Show test charge
-            </label>
-
-            <label className="control-span-2" title={TIP.boundary} data-hover-help={TIP.boundary}>
-              <span className="slider-label">
-                <span>Boundary model</span>
-              </span>
-              <select
-                value={boundary}
-                onChange={(e) => setBoundary(e.target.value as BoundaryMode)}
-                aria-label="Boundary model"
-              >
-                <option value="free">Free space</option>
-                <option value="grounded_plane">Grounded plane</option>
-              </select>
-            </label>
-
-            <div className="control-section control-span-2">
-              <div className="section-title">Presets</div>
-              <div className="control-grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
-                {PRESETS.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    title={p.tip}
-                    data-hover-help={p.tip}
-                    onClick={() => applyPreset(p.id)}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="button-row control-span-2">
-              <button type="button" title={TIP.delete} data-hover-help={TIP.delete} onClick={onDeleteSelected} disabled={!selectedId}>
-                Delete selected
-              </button>
-              <button type="button" title={TIP.reset} data-hover-help={TIP.reset} onClick={onReset}>
-                Reset
-              </button>
-            </div>
-
-            <details className="control-span-2 control-section" style={{ borderTop: "none" }}>
-              <summary className="section-title" style={{ cursor: "pointer", listStyle: "none" }}>
-                Physics hints
-              </summary>
-              <ul style={{ margin: "0.35rem 0 0", paddingLeft: "1.1rem", lineHeight: 1.5 }}>
-                <li>Field lines start on positive charges and end on negative charges or at infinity.</li>
-                <li>Equipotentials meet field lines at right angles.</li>
-                <li>Conductor surfaces are equipotentials; grounded means fixed at zero potential.</li>
-              </ul>
-            </details>
-          </div>
-        </ControlCard>
-      </div>
-
-      <div className="canvas-shell card">
-        <div title={TIP.canvas} data-hover-help={TIP.canvas}>
-          <canvas
-            ref={canvasRef}
-            width={880}
-            height={600}
-            style={{ display: "block", width: "100%", height: "auto", touchAction: "none" }}
-          />
-        </div>
-        <p className="subtle" style={{ margin: "0.45rem 0 0", fontSize: "0.78rem", lineHeight: 1.45 }}>
-          Grounded plane: metallic region is the half-space below the line; real charges are kept above it. The solver
-          adds opposite image charges below the surface.
-        </p>
-      </div>
-    </div>
+    <AppletStage
+      logicalWidth={CANVAS_W}
+      logicalHeight={CANVAS_H}
+      canvasRef={canvasRef}
+      canvasLabel="Electric field lines and equipotentials around point charges"
+      canvasProps={{ style: { touchAction: "none", cursor: "crosshair" } }}
+      toolbar={toolbar}
+      controls={controls}
+      info={info}
+    />
   );
 }
