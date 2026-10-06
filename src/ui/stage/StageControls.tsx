@@ -43,27 +43,44 @@ export function StageSlider(
   );
 }
 
+/** With `label` it is a labelled field for the controls panel; without, a bare select for the top bar. */
 export function StageSelect<T extends string>(
   props: Tip & {
-    label: ReactNode;
+    label?: ReactNode;
+    ariaLabel?: string;
     value: T;
     options: { value: T; label: string }[];
     disabled?: boolean;
     onChange: (value: T) => void;
   }
 ): JSX.Element {
+  const select = (
+    <select
+      value={props.value}
+      disabled={props.disabled}
+      aria-label={props.ariaLabel}
+      onChange={(e) => props.onChange(e.target.value as T)}
+    >
+      {props.options.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
+  if (props.label == null) {
+    return (
+      <span className="stage-select-bare" {...tipProps(props.tip)}>
+        {select}
+      </span>
+    );
+  }
   return (
     <label className="stage-field" {...tipProps(props.tip)}>
       <span className="stage-field-head">
         <span>{props.label}</span>
       </span>
-      <select value={props.value} disabled={props.disabled} onChange={(e) => props.onChange(e.target.value as T)}>
-        {props.options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+      {select}
     </label>
   );
 }
@@ -130,7 +147,7 @@ export function StageSegmented<T extends string | number>(
     ariaLabel: string;
     label?: ReactNode;
     value: T;
-    options: { value: T; label: ReactNode; tip?: string }[];
+    options: { value: T; label: ReactNode; tip?: string; disabled?: boolean }[];
     disabled?: boolean;
     onChange: (value: T) => void;
   }
@@ -142,7 +159,7 @@ export function StageSegmented<T extends string | number>(
           key={String(o.value)}
           type="button"
           aria-pressed={props.value === o.value}
-          disabled={props.disabled}
+          disabled={props.disabled || o.disabled}
           {...tipProps(o.tip)}
           onClick={() => props.onChange(o.value)}
         >

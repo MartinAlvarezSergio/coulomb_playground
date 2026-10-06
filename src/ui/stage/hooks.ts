@@ -50,10 +50,19 @@ export function useHoverHelp(rootRef: RefObject<HTMLElement>): void {
     if (!root) {
       return;
     }
-    // Lives inside the root so it still shows when the root is full screen.
+    // Attach to <body>, or to the full-screen element while one is active, so it still shows
+    // in full screen. Not inside the applet: an ancestor with a filter or backdrop-filter
+    // (e.g. `.card`) becomes the containing block for position: fixed and shifts the tooltip.
     const tooltip = document.createElement("div");
-    tooltip.className = "hover-help-tooltip";
-    root.appendChild(tooltip);
+    tooltip.className = "hover-help-tooltip stage-tooltip";
+    const attach = (): void => {
+      const host = (document.fullscreenElement as HTMLElement | null) ?? document.body;
+      if (tooltip.parentElement !== host) {
+        host.appendChild(tooltip);
+      }
+    };
+    attach();
+    document.addEventListener("fullscreenchange", attach);
 
     const placeTooltip = (x: number, y: number): void => {
       const offset = 14;
@@ -87,6 +96,7 @@ export function useHoverHelp(rootRef: RefObject<HTMLElement>): void {
     return () => {
       root.removeEventListener("mousemove", onMouseMove);
       root.removeEventListener("mouseleave", onMouseLeave);
+      document.removeEventListener("fullscreenchange", attach);
       tooltip.remove();
     };
   }, [rootRef]);

@@ -565,11 +565,12 @@ canvas {
 .stage-controls {
   top: 62px;
   left: 12px;
-  width: 240px;
+  width: var(--stage-controls-w, 240px);
   max-height: calc(100% - 74px);
   overflow-y: auto;
   padding: 12px;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   gap: 12px;
   scrollbar-width: thin;
@@ -682,6 +683,12 @@ canvas {
 :root .stage .stage-pill {
   border-radius: 999px;
   border-color: rgba(255, 255, 255, 0.14);
+}
+
+/* Pills wrap inside the controls panel (labels stay word-for-word) but not in the top bar
+   or the small comparison cards. */
+.stage-topbar .stage-pill,
+.compare-target-card .stage-pill {
   white-space: nowrap;
 }
 
@@ -740,6 +747,15 @@ canvas {
   align-items: baseline;
   gap: 12px;
   color: rgba(235, 232, 226, 0.78);
+}
+
+/* A long value drops under its label instead of squeezing it. */
+.stage-field-head {
+  flex-wrap: wrap;
+}
+
+.stage-field-head strong {
+  margin-left: auto;
 }
 
 .stage-field-head strong,
@@ -807,6 +823,7 @@ canvas {
 
 .stage-section-body {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
 }
 
@@ -848,6 +865,109 @@ canvas {
   margin: 0 auto;
 }
 
+/* Stage tooltips attach to <body> (see useHoverHelp); size to content up to the max width. */
+.hover-help-tooltip.stage-tooltip {
+  width: max-content;
+}
+
+.stage-select-bare select {
+  width: auto;
+  max-width: 220px;
+}
+
+/* Light surface (AppletStage surface="light"), for canvases that follow the light theme. */
+.stage.is-light {
+  background: #eef2f7;
+  color: #172235;
+}
+
+.stage.is-light .stage-glass {
+  background: rgba(255, 255, 255, 0.74);
+  border-color: rgba(28, 48, 76, 0.16);
+  box-shadow: 0 8px 24px rgba(25, 43, 68, 0.14);
+}
+
+:root .stage.is-light button {
+  background: rgba(28, 48, 76, 0.06);
+  color: #172235;
+}
+
+:root .stage.is-light button:hover:not(:disabled) {
+  background: rgba(28, 48, 76, 0.12);
+}
+
+:root .stage.is-light button[aria-pressed="true"] {
+  background: rgba(53, 111, 168, 0.18);
+  border-color: rgba(53, 111, 168, 0.5);
+  color: #11335a;
+}
+
+:root .stage.is-light button:disabled,
+:root .stage.is-light select:disabled,
+:root .stage.is-light input:disabled {
+  background: rgba(28, 48, 76, 0.04);
+  color: rgba(23, 34, 53, 0.5);
+}
+
+:root .stage.is-light .stage-pill {
+  border-color: rgba(28, 48, 76, 0.18);
+}
+
+:root .stage.is-light .stage-play {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(28, 48, 76, 0.25);
+  color: #172235;
+}
+
+:root .stage.is-light select,
+:root .stage.is-light input[type="text"],
+:root .stage.is-light input[type="number"] {
+  background: rgba(255, 255, 255, 0.85);
+  color: #172235;
+  border-color: rgba(28, 48, 76, 0.2);
+}
+
+:root .stage.is-light input[type="range"] {
+  accent-color: #276ba6;
+}
+
+.stage.is-light .stage-field-head,
+.stage.is-light .stage-field-inline,
+.stage.is-light .stage-readout,
+.stage.is-light .stage-hero {
+  color: rgba(23, 34, 53, 0.72);
+}
+
+.stage.is-light .stage-field-head strong,
+.stage.is-light .stage-readout strong,
+.stage.is-light .stage-hero strong,
+.stage.is-light .stage-info h4 {
+  color: #0f1b2d;
+}
+
+.stage.is-light .stage-info ul {
+  color: rgba(23, 34, 53, 0.85);
+}
+
+.stage.is-light .stage-section > summary {
+  color: rgba(23, 34, 53, 0.55);
+}
+
+.stage.is-light .stage-seg {
+  background: rgba(28, 48, 76, 0.06);
+}
+
+.stage.is-light .stage-divider {
+  background: rgba(28, 48, 76, 0.16);
+}
+
+.stage.is-light .stage-section + .stage-section,
+.stage.is-light .stage-field + .stage-section,
+.stage.is-light .stage-pills + .stage-section,
+.stage.is-light .stage-presets {
+  border-top-color: rgba(28, 48, 76, 0.12);
+}
+
 /* Small screens: the overlays drop below the experiment instead of covering it. */
 @media (max-width: 760px) {
   .stage {
@@ -872,6 +992,17 @@ canvas {
     background: #0c111b;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
+  }
+
+  .stage.is-light .stage-glass {
+    background: #ffffff;
+  }
+
+  /* Keep the close button inside the info panel once it is in the page flow. */
+  .stage-info {
+    position: relative;
+    left: auto;
+    top: auto;
   }
 
   .stage-topbar {

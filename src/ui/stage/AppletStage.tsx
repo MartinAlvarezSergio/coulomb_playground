@@ -1,4 +1,4 @@
-import { CSSProperties, HTMLAttributes, ReactNode, RefObject, useRef, useState } from "react";
+import { CSSProperties, HTMLAttributes, ReactNode, RefObject, useEffect, useRef, useState } from "react";
 import { useCanvasBackingStore, useEscapeKey, useFullscreen, useHoverHelp } from "./hooks";
 import { StageDivider, StageIconButton } from "./StageControls";
 import { StageIcon } from "./StageIcon";
@@ -28,6 +28,14 @@ export type AppletStageProps = {
   play?: { visible: boolean; label: string; onClick: () => void };
   /** Content shown under the stage, e.g. captured runs. */
   below?: ReactNode;
+  /** "light" for applets whose canvas follows the light colour theme; panels then use light glass. */
+  surface?: "dark" | "light";
+  /** Extra class on the stage root, so an applet can scope its own small stylesheet. */
+  rootClassName?: string;
+  /** Width of the controls panel in CSS px (default 240), for panels with long labels. */
+  controlsWidth?: number;
+  /** Told when the controls panel is shown or hidden, e.g. to keep a plot's axes clear of it. */
+  onControlsVisibilityChange?: (visible: boolean) => void;
 };
 
 const TIPS = {
@@ -37,8 +45,9 @@ const TIPS = {
 };
 
 /**
- * Full-bleed experiment with translucent overlay panels. The stage stays dark in both
- * colour themes (scientific canvases keep a dark surface), so overlay colours are fixed.
+ * Full-bleed experiment with translucent overlay panels. By default the stage is dark in
+ * both colour themes (scientific canvases keep a dark surface); `surface="light"` switches
+ * the panels to light glass for canvases that follow the light theme.
  */
 export function AppletStage(props: AppletStageProps): JSX.Element {
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -47,14 +56,26 @@ export function AppletStage(props: AppletStageProps): JSX.Element {
   const { isFullscreen, toggleFullscreen } = useFullscreen(stageRef);
 
   useCanvasBackingStore([props.canvasRef], props.onCanvasResize);
+
+  const { onControlsVisibilityChange } = props;
+  useEffect(() => {
+    onControlsVisibilityChange?.(showControls);
+  }, [showControls, onControlsVisibilityChange]);
   useHoverHelp(stageRef);
   useEscapeKey(showInfo, () => setShowInfo(false));
 
-  const sizeVars = { "--stage-w": props.logicalWidth, "--stage-h": props.logicalHeight } as CSSProperties;
+  const sizeVars = {
+    "--stage-w": props.logicalWidth,
+    "--stage-h": props.logicalHeight,
+    ...(props.controlsWidth ? { "--stage-controls-w": `${props.controlsWidth}px` } : {})
+  } as CSSProperties;
 
   return (
-    <div className="stage-root" style={sizeVars}>
-      <div ref={stageRef} className={`stage${isFullscreen ? " is-fullscreen" : ""}`}>
+    <div className={`stage-root${props.rootClassName ? ` ${props.rootClassName}` : ""}`} style={sizeVars}>
+      <div
+        ref={stageRef}
+        className={`stage${isFullscreen ? " is-fullscreen" : ""}${props.surface === "light" ? " is-light" : ""}`}
+      >
         <div className="stage-canvas-wrap">
           <canvas
             ref={props.canvasRef}
